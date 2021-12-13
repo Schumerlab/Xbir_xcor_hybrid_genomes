@@ -1,0 +1,81 @@
+// set up a neutral admixture simulation
+initialize() {
+	defineConstant("work_dir", "./"); // The working directory.
+
+	setSeed(SEED);
+	
+	defineConstant("chr_length",31064591);
+	defineConstant("nummut",5);
+	//no mutations since the trees will be recorded
+	initializeMutationRate(0);
+	initializeTreeSeq();
+	
+	//set up genomic elements, but no mutations will occur
+	for (i in 1:nummut)
+	{
+		initializeMutationType("m"+asString(2 * i - 1), 0.5, "f", 0); // mutation for chr 2
+		initializeMutationType("m"+asString(2 * i), 0.5, "f", 0); // interacting mutations
+	}
+	initializeGenomicElementType("g1", c(m1,m3,m5,m7,m9), rep(1.0,nummut)); // mutation sites on chr 2
+	initializeGenomicElementType("g2", c(m2,m4,m6,m8,m10), rep(1.0,nummut)); // interacting mutation sites
+	// placing regions with possible deleterious mutations based on CDS annotations
+	coding = readFile("/home/groups/schumer/lab_member_folders/molly/SLiM/xiphophorus_birchmanni_10x_12Sep2018_yDAA6-ScyDAA6-1196-HRSCAF-1406_coding_nonoverlapping.tsv");
+	
+	for (line in coding)
+	{
+		components = strsplit(line, "\t");
+		initializeGenomicElement(g1, asInteger(components[1]), asInteger(components[2]));
+	}
+	// placing five bases at the end of the chromosome to act as interacting loci
+	initializeGenomicElement(g2, chr_length, chr_length + nummut);
+	
+	// creating recombination map for chromosome 2 (ScyDAA6-1196-HRSCAF-1406, randomly chosen	
+	lines = readFile("/home/groups/schumer/lab_member_folders/molly/SLiM/SLiM-ready-recmap-ScyDAA6-1196-HRSCAF-1406.tsv");
+	rates = c();
+	ends = c();
+	for (line in lines)
+	{
+		components = strsplit(line,"\t");
+		rates = c(rates, asFloat(components[0]));
+		ends = c(ends, asInteger(components[1]));
+	}
+	
+	initializeRecombinationRate(rates, ends);
+}
+
+
+
+// create two populations of popsize individuals
+1 late() {
+	sim.addSubpop("p1", 1);
+	sim.addSubpop("p2", 1);
+	sim.rescheduleScriptBlock(s1, start=GEN+1, end=GEN+1);
+	sim.treeSeqRememberIndividuals(sim.subpopulations.individuals);
+	sim.addSubpop("p3", POPSIZE);
+	p3.setMigrationRates(c(p1, p2), c(INIT_PROP, 1-INIT_PROP));
+
+}
+
+//resize parental populations to allow enough migrants from the parental pops
+2 late() {
+	p3.setMigrationRates(c(p1, p2), c(0.0, 0.0));
+	p1.setSubpopulationSize(asInteger(PAR1MIG*POPSIZE+10));
+	p2.setSubpopulationSize(asInteger(PAR2MIG*POPSIZE+10));
+	print("Par 1 pop size reset to "); print(asInteger(PAR1MIG*POPSIZE+10));
+	print("Par 2 pop size reset to "); print(asInteger(PAR2MIG*POPSIZE+10));
+}
+
+//specify continuous migration from parental pops starting at generation three
+3{
+	p3.setMigrationRates(c(p1, p2), c(PAR1MIG,PAR2MIG));
+	print("Migrating from par1, rate "); print(PAR1MIG);
+	print("Migrating from par2, rate "); print(PAR2MIG);
+}
+
+s1 2000 late() {
+	//catn("\n" + work_dir);
+	outdir=paste0(c(work_dir + "/slim_out/dem_abc_sim",SEED,".trees"));
+	sim.treeSeqOutput(outdir);
+	sim.simulationFinished();
+	catn(SEED + " Simulation Finished\t" + outdir);
+}
